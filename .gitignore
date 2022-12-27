@@ -1,3 +1,4 @@
 *.pyc
 *.swp
 keyring.json
+blackace.db

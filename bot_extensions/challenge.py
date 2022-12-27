@@ -132,9 +132,6 @@ class BBOChallengeParser(HTMLParser):
 
 
 class ChallengeExtension(interactions.Extension):
-    def __init__(self, client):
-        self.client = client
-
     @interactions.extension_command(
         name="parse_imp_challenge",
         description="Parses an IMP friend challenge from BBO.",
@@ -152,8 +149,11 @@ class ChallengeExtension(interactions.Extension):
     
         parsed_url = urlparse(matchlink)
         if parsed_url.scheme != 'https' or parsed_url.netloc != 'webutil.bridgebase.com':
+            await ctx.send(
+                "Matchlink is not from webutil.bridgebase.com. Refusing to parse.",
+                ephemeral=True
+            )
             return
-            # should throw an error back at the user
         
         parser.feed(requests.get(matchlink).text)
         match_details = parser.finalize()
