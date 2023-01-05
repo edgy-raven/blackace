@@ -47,7 +47,10 @@ class MatchDetails:
                         f'```     |{self.hero:^15}|{self.villain:^15}|{"imps":10}' +
                         line_sep +
                         line_sep.join(
-                            f'|{i:^4}|{board.hero_result:<8}|{board.hero_score:<6d}|{board.villain_result:<8}|{board.villain_score:<6d}|{board.hero_imps:<2}|{board.villain_imps:<2}|'
+                            (
+                                f'|{i+1:^4}|{board.hero_result:<8}|{board.hero_score:<6d}|{board.villain_result:<8}|'
+                                f'{board.villain_score:<6d}|{board.hero_imps or "":<2}|{board.villain_imps or "":<2}|'
+                            )
                             for i, board in enumerate(self.boards)
                         ) + 
                         line_sep + "```"
@@ -77,7 +80,9 @@ class BBOChallengeParser(HTMLParser):
     def current_state(self):
         return self.context_stack[-1] if self.context_stack else None
     
-    def handle_starttag(self, tag, attrs):        
+    def handle_starttag(self, tag, attrs):
+        if tag == 'hr':
+            return
         state = self.current_state
         if state is None and any(attr == ('class', 'handrecords') for attr in attrs):
             state = 'handrecords'
