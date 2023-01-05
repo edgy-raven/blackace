@@ -38,14 +38,13 @@ class ProfileExtension(interactions.Extension):
     ):
         success = True
         with bot_datastore.Session() as session:
-            model_cls = bot_datastore.BBOProxy if proxy else bot_datastore.BBOMain
+            model_cls = bot_datastore.BBORepresentative if proxy else bot_datastore.BBOMain
             model = model_cls(bbo_user=bbo_user, discord_user=int(discord_user.id))
             session.add(model)
             try:
                 session.commit()
             except IntegrityError:
                 success = False
-
         await ctx.send(
             f"Successfully linked {discord_user.mention} to {bbo_user}!" if success else
             f"Failed to link {discord_user.mention}! {bbo_user} is already linked.", 
@@ -68,26 +67,60 @@ class ProfileExtension(interactions.Extension):
     async def bbo_unlink(self, ctx: interactions.CommandContext, bbo_user: str):
         success = True
         with bot_datastore.Session() as session:
-            main_model = session.get(bbo_datastore.BBOMain, bbo_user)
+            main_model = session.get(bot_datastore.BBOMain, bbo_user)
             if main_model:
                 session.delete(main_model)
-            representative_model = session.get(bbo_datastore.BBORepresentative, bbo_user)
+            representative_model = session.get(bot_datastore.BBORepresentative, bbo_user)
             if representative_model:
                 session.delete(representative_model)
             if not (main_model or representative_model):
                 success = False
+            else:
+                session.commit()
         await ctx.send(
             f"Successfully unlinked {bbo_user}!" if success else
             f"Did not find entry for {bbo_user}!", 
             ephemeral=True
         )
 
+    @interactions.extension_command(
+        name="profile",
+        description="Displays the profile of a user.",
+        options=[
+            interactions.Option(
+                name="discord_user",
+                description="Discord mention of user.",
+                type=interactions.OptionType.USER,
+                required=True
+            )
+        ]
+    )
+    async def profile(self, ctx: interactions.CommandContext, discord_user: interactions.api.models.member.Member):
+        with bot_datastore.Session() as session:
+            profile_model = session.get(bot_datastore.ServerProfile, int(discord_user.id))
+            if not profile_model:
+                await ctx.send("Failed to find profile for {discord_user.mention}!", ephemeral=True)
+                return
+            description = ""
+            if profile_model.bbo_main_account:
+                description += f"**BBO Username**: {profile_model.bbo_main_account.bbo_user}\n"
+            if profile_model.bbo_representing:
+                description += f"**Representing**: {', '.join(r.bbo_user for r in profile_model.bbo_representing)}\n"
+            description = description or "No information to show."
+        profile_embed = interactions.Embed(
+            title=f"Card Games at 1430 Profile of User: `{discord_user.name}`",
+            description=description
+        )
+        await ctx.send(embeds=profile_embed)
+
+
     @interactions.extension_listener(name="on_guild_member_add")
     async def add_guild_member_to_db(self, member):
         with bot_datastore.Session() as session:
-            model = bot_datastore.ServerProfile(discord_user=int(member.id))
-            session.add(model)
-            session.commit()
+            if not session.get(bot_datastore.ServerProfile, int(member.id)):
+                model = bot_datastore.ServerProfile(discord_user=int(member.id))
+                session.add(model)
+                session.commit()
     
     @interactions.extension_listener(name="on_ready")
     async def sync_member_list(self):

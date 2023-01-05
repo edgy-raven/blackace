@@ -11,7 +11,7 @@ if __name__ == '__main__':
 
     bot = interactions.Client(
         token=keyring['bot_token'], 
-        default_scope=keyring['served_guild']
+        default_scope=keyring['served_guild'],
     )
     bot.load('bot_extensions.challenge')
     bot.load('bot_extensions.profile')
