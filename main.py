@@ -15,6 +15,7 @@ if __name__ == '__main__':
         intents=interactions.Intents.DEFAULT | interactions.Intents.GUILD_MEMBERS
     )
     bot.load('bot_extensions.challenge')
+    bot.load('bot_extensions.tournament')
     bot.load('bot_extensions.profile')
     
     @bot.event(name='on_ready')

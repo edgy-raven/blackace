@@ -79,7 +79,7 @@ class ProfileExtension(interactions.Extension):
                 session.commit()
         await ctx.send(
             f"Successfully unlinked {bbo_user}!" if success else
-            f"Did not find entry for {bbo_user}!", 
+            f"Did not find entry for {bbo_user}!",
             ephemeral=True
         )
 
