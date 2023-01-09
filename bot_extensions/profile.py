@@ -1,14 +1,14 @@
 import interactions
 from sqlalchemy.exc import IntegrityError
 
-import bot_datastore 
+import bot_datastore
 
 
 class ProfileExtension(interactions.Extension):
     @interactions.extension_command(
         name="bbo_link",
         description="Links a discord user to a BBO user.",
-        default_member_permissions = interactions.Permissions.MANAGE_MESSAGES,
+        default_member_permissions=interactions.Permissions.MANAGE_MESSAGES,
         options=[
             interactions.Option(
                 name="discord_user",
@@ -30,10 +30,10 @@ class ProfileExtension(interactions.Extension):
         ]
     )
     async def bbo_link(
-        self, 
+        self,
         ctx: interactions.CommandContext,
-        discord_user: interactions.api.models.member.Member, 
-        bbo_user: str, 
+        discord_user: interactions.api.models.member.Member,
+        bbo_user: str,
         proxy: bool = False
     ):
         success = True
@@ -41,20 +41,21 @@ class ProfileExtension(interactions.Extension):
             model_cls = bot_datastore.BBORepresentative if proxy else bot_datastore.BBOMain
             model = model_cls(bbo_user=bbo_user, discord_user=int(discord_user.id))
             session.add(model)
+            session.add(bot_datastore.BBOProfile(bbo_user=bbo_user))
             try:
                 session.commit()
             except IntegrityError:
                 success = False
         await ctx.send(
             f"Successfully linked {discord_user.mention} to {bbo_user}!" if success else
-            f"Failed to link {discord_user.mention}! {bbo_user} is already linked.", 
+            f"Failed to link {discord_user.mention}! {bbo_user} is already linked.",
             ephemeral=True
         )
 
     @interactions.extension_command(
         name="bbo_unlink",
         description="Unlinks a BBO user.",
-        default_member_permissions = interactions.Permissions.MANAGE_MESSAGES,
+        default_member_permissions=interactions.Permissions.MANAGE_MESSAGES,
         options=[
             interactions.Option(
                 name="bbo_user",
@@ -113,7 +114,6 @@ class ProfileExtension(interactions.Extension):
         )
         await ctx.send(embeds=profile_embed)
 
-
     @interactions.extension_listener(name="on_guild_member_add")
     async def add_guild_member_to_db(self, member):
         with bot_datastore.Session() as session:
@@ -121,7 +121,7 @@ class ProfileExtension(interactions.Extension):
                 model = bot_datastore.ServerProfile(discord_user=int(member.id))
                 session.add(model)
                 session.commit()
-    
+
     @interactions.extension_listener(name="on_ready")
     async def sync_member_list(self):
         all_discord_users = [int(m.id) async for m in self.client.guilds[0].get_members()]

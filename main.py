@@ -3,8 +3,6 @@ import logging
 
 import interactions
 
-import bot_datastore
-
 
 if __name__ == '__main__':
     keyring = json.load(open('keyring.json'))
