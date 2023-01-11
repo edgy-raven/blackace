@@ -2,7 +2,15 @@ import logging
 
 import interactions
 
-import bot_datastore
+from bridge_discord import datastore
+
+
+def bbo_user_option_factory(description):
+    return interactions.Option(
+        name="bbo_user",
+        description=description,
+        type=interactions.OptionType.STRING
+    )
 
 
 class TeamRRManagerExtension(interactions.Extension):
@@ -10,12 +18,19 @@ class TeamRRManagerExtension(interactions.Extension):
         name="team_rr_create",
         description="Creates a team round robin tournament",
         default_member_permissions=interactions.Permissions.MANAGE_MESSAGES,
-        # Todo: adjustable parameters
+        options=[
+            interactions.Option(
+                name="tournament_name",
+                description="The name of the new tournament.",
+                type=interactions.OptionType.STRING,
+                required=True
+            )
+        ]
     )
-    async def create_tournament(self, ctx):
-        with bot_datastore.Session() as session:
-            tournament_model = bot_datastore.TeamRRTournament(state="signup")
-            session.add(tournament_model)
+    async def create_tournament(self, ctx, tournament_name):
+        with datastore.Session() as session:
+            session.add(
+                datastore.TeamRRTournament(state="signup", tournament_name=tournament_name))
             session.commit()
         await ctx.send("Successfully created a new team round robin tournament!")
 
@@ -23,18 +38,13 @@ class TeamRRManagerExtension(interactions.Extension):
         name="team_rr_signup",
         description="Sign up for the currently active team round robin tournament.",
         options=[
-            # todo: make this into a factory
-            interactions.Option(
-                name="bbo_user",
-                description="BBO user if signing up for someone else.",
-                type=interactions.OptionType.STRING
-            )
+            bbo_user_option_factory("BBO user if signing up for someone else."),
         ]
     )
     async def signup(self, ctx, bbo_user=None):
         # todo: abstract this out into guards
-        with bot_datastore.Session() as session:
-            profile_model = session.get(bot_datastore.ServerProfile, int(ctx.user.id))
+        with datastore.Session() as session:
+            profile_model = session.get(datastore.ServerProfile, int(ctx.user.id))
             if not bbo_user:
                 bbo_user = profile_model.bbo_main_account.bbo_user
             elif not profile_model.is_linked(bbo_user):
@@ -43,7 +53,7 @@ class TeamRRManagerExtension(interactions.Extension):
                     ephemeral=True
                 )
                 return
-            active_tournament = bot_datastore.TeamRRTournament.get_active_tournament(session)
+            active_tournament = datastore.TeamRRTournament.get_active_tournament(session)
             if not active_tournament:
                 await ctx.send(
                     "No tournament is currently running. Wait for one to start!",
@@ -51,7 +61,7 @@ class TeamRRManagerExtension(interactions.Extension):
                 )
                 return
             session.add(
-                bot_datastore.TeamRREntry(tournament_id=active_tournament.tournament_id, bbo_user=bbo_user)
+                datastore.TeamRREntry(tournament_id=active_tournament.tournament_id, bbo_user=bbo_user)
             )
             session.commit()
         await ctx.send("Signed up for the upcoming tournament!", ephemeral=True)
@@ -60,16 +70,12 @@ class TeamRRManagerExtension(interactions.Extension):
         name="team_rr_drop",
         description="Drop registration from the currently active team round robin tournament.",
         options=[
-            interactions.Option(
-                name="bbo_user",
-                description="BBO user if dropping for someone else.",
-                type=interactions.OptionType.STRING
-            )
+            bbo_user_option_factory("BBO user if dropping for someone else."),
         ]
     )
     async def drop_tournament(self, ctx, bbo_user=None):
-        with bot_datastore.Session() as session:
-            profile_model = session.get(bot_datastore.ServerProfile, int(ctx.user.id))
+        with datastore.Session() as session:
+            profile_model = session.get(datastore.ServerProfile, int(ctx.user.id))
             if not bbo_user:
                 bbo_user = profile_model.bbo_main_account.bbo_user
             elif not profile_model.is_linked(bbo_user):
@@ -78,7 +84,7 @@ class TeamRRManagerExtension(interactions.Extension):
                     ephemeral=True
                 )
                 return
-            active_tournament = bot_datastore.TeamRRTournament.get_active_tournament(session)
+            active_tournament = datastore.TeamRRTournament.get_active_tournament(session)
             if not active_tournament:
                 await ctx.send(
                     "No tournament is currently running. Wait for one to start!",
@@ -86,7 +92,7 @@ class TeamRRManagerExtension(interactions.Extension):
                 )
                 return
 
-            entry_model = session.get(bot_datastore.TeamRREntry, (active_tournament.tournament_id, bbo_user))
+            entry_model = session.get(datastore.TeamRREntry, (active_tournament.tournament_id, bbo_user))
             if not entry_model:
                 await ctx.send(
                     f"{bbo_user} is not currently signed up for the upcoming tournament.",
@@ -102,11 +108,12 @@ class TeamRRManagerExtension(interactions.Extension):
         description="Displays information about the currently active team round robin tournament.",
     )
     async def team_rr_info(self, ctx):
-        profile_embed = interactions.Embed(title="Upcoming Team RR Details")
-        with bot_datastore.Session() as session:
-            tournament_model = bot_datastore.TeamRRTournament.get_active_tournament(session)
+        profile_embed = interactions.Embed()
+        with datastore.Session() as session:
+            tournament_model = datastore.TeamRRTournament.get_active_tournament(session)
             if not tournament_model:
                 await ctx.send("No tournament is currently running. Wait for one to start!")
+            profile_embed.title = f"Team RR Tournament: {tournament_model.tournament_name}"
             profile_embed.add_field(
                 name="Tournament Details",
                 value="\n".join(
@@ -121,7 +128,7 @@ class TeamRRManagerExtension(interactions.Extension):
             bbo_users = [p.bbo_user for p in tournament_model.participants]
             mention_strings = []
             for bbo_user in bbo_users:
-                bbo_model = session.get(bot_datastore.BBOProfile, bbo_user)
+                bbo_model = session.get(datastore.BBOProfile, bbo_user)
                 if bbo_model.discord_main:
                     discord_user = await interactions.get(
                         self.client, interactions.User, object_id=bbo_model.discord_main.discord_user)
@@ -132,7 +139,7 @@ class TeamRRManagerExtension(interactions.Extension):
                 profile_embed.add_field(
                     name="Currently Registered Players",
                     value="\n".join(
-                        f"    •{bbo_user}{mention}"
+                        f"\t    • {bbo_user}{mention}"
                         for bbo_user, mention in zip(bbo_users, mention_strings)
                     )
                 )
@@ -140,10 +147,10 @@ class TeamRRManagerExtension(interactions.Extension):
 
 
 def setup(client):
-    bot_datastore.setup_connection()
-    with bot_datastore.Session() as session:
+    datastore.setup_connection()
+    with datastore.Session() as session:
         active_tournament = session.query(
-            bot_datastore.TeamRRTournament).where(bot_datastore.TeamRRTournament.state != "Inactive").all()
+            datastore.TeamRRTournament).where(datastore.TeamRRTournament.state != "Inactive").all()
         if active_tournament and len(active_tournament) > 1:
             logging.critical("There can only be one active Team RR tournament.")
             raise ValueError("Failed setup assumptions.")

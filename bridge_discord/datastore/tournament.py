@@ -9,6 +9,7 @@ class TeamRRTournament(Base):
     __tablename__ = "teamrr_tournament"
 
     tournament_id = Column(Integer, primary_key=True, autoincrement=True)
+    tournament_name = Column(String, default="Team RR")
     created_at = Column(DateTime, server_default=func.now())
     scoring_method = Column(String, default="IMPs")
     segment_boards = Column(Integer, default=7)

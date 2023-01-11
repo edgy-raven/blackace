@@ -2,4 +2,4 @@
 *.swp
 *.swo
 keyring.json
-blackace.db
+bridge_discord.db

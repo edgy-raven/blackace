@@ -1,7 +1,7 @@
 import interactions
 from sqlalchemy.exc import IntegrityError
 
-import bot_datastore
+from bridge_discord import datastore
 
 
 class ProfileExtension(interactions.Extension):
@@ -37,11 +37,11 @@ class ProfileExtension(interactions.Extension):
         proxy: bool = False
     ):
         success = True
-        with bot_datastore.Session() as session:
-            model_cls = bot_datastore.BBORepresentative if proxy else bot_datastore.BBOMain
+        with datastore.Session() as session:
+            model_cls = datastore.BBORepresentative if proxy else datastore.BBOMain
             model = model_cls(bbo_user=bbo_user, discord_user=int(discord_user.id))
             session.add(model)
-            session.add(bot_datastore.BBOProfile(bbo_user=bbo_user))
+            session.add(datastore.BBOProfile(bbo_user=bbo_user))
             try:
                 session.commit()
             except IntegrityError:
@@ -67,11 +67,11 @@ class ProfileExtension(interactions.Extension):
     )
     async def bbo_unlink(self, ctx: interactions.CommandContext, bbo_user: str):
         success = True
-        with bot_datastore.Session() as session:
-            main_model = session.get(bot_datastore.BBOMain, bbo_user)
+        with datastore.Session() as session:
+            main_model = session.get(datastore.BBOMain, bbo_user)
             if main_model:
                 session.delete(main_model)
-            representative_model = session.get(bot_datastore.BBORepresentative, bbo_user)
+            representative_model = session.get(datastore.BBORepresentative, bbo_user)
             if representative_model:
                 session.delete(representative_model)
             if not (main_model or representative_model):
@@ -96,9 +96,9 @@ class ProfileExtension(interactions.Extension):
             )
         ]
     )
-    async def profile(self, ctx: interactions.CommandContext, discord_user: interactions.api.models.member.Member):
-        with bot_datastore.Session() as session:
-            profile_model = session.get(bot_datastore.ServerProfile, int(discord_user.id))
+    async def profile(self, ctx: interactions.CommandContext, discord_user: interactions.Member):
+        with datastore.Session() as session:
+            profile_model = session.get(datastore.ServerProfile, int(discord_user.id))
             if not profile_model:
                 await ctx.send("Failed to find profile for {discord_user.mention}!", ephemeral=True)
                 return
@@ -116,24 +116,24 @@ class ProfileExtension(interactions.Extension):
 
     @interactions.extension_listener(name="on_guild_member_add")
     async def add_guild_member_to_db(self, member):
-        with bot_datastore.Session() as session:
-            if not session.get(bot_datastore.ServerProfile, int(member.id)):
-                model = bot_datastore.ServerProfile(discord_user=int(member.id))
+        with datastore.Session() as session:
+            if not session.get(datastore.ServerProfile, int(member.id)):
+                model = datastore.ServerProfile(discord_user=int(member.id))
                 session.add(model)
                 session.commit()
 
     @interactions.extension_listener(name="on_ready")
     async def sync_member_list(self):
         all_discord_users = [int(m.id) async for m in self.client.guilds[0].get_members()]
-        with bot_datastore.Session() as session:
+        with datastore.Session() as session:
             for discord_user in all_discord_users:
-                model = session.get(bot_datastore.ServerProfile, discord_user)
+                model = session.get(datastore.ServerProfile, discord_user)
                 if model:
                     continue
-                session.add(bot_datastore.ServerProfile(discord_user=discord_user))
+                session.add(datastore.ServerProfile(discord_user=discord_user))
             session.commit()
 
 
 def setup(client):
-    bot_datastore.setup_connection()
+    datastore.setup_connection()
     ProfileExtension(client)

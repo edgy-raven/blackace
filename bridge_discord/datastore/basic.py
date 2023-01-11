@@ -9,7 +9,7 @@ def setup_connection():
     global _sessionmaker
     if _sessionmaker:
         return
-    engine = create_engine("sqlite:///blackace.db")
+    engine = create_engine("sqlite:///bridge_discord.db")
     _sessionmaker = sessionmaker(engine)
     Base.metadata.create_all(engine)
 
