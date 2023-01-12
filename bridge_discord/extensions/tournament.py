@@ -1,8 +1,10 @@
 import logging
 
 import interactions
+from sqlalchemy.exc import IntegrityError
 
 from bridge_discord import datastore
+from bridge_discord.extensions import utilities
 
 
 def bbo_user_option_factory(description):
@@ -41,30 +43,23 @@ class TeamRRManagerExtension(interactions.Extension):
             bbo_user_option_factory("BBO user if signing up for someone else."),
         ]
     )
-    async def signup(self, ctx, bbo_user=None):
-        # todo: abstract this out into guards
-        with datastore.Session() as session:
-            profile_model = session.get(datastore.ServerProfile, int(ctx.user.id))
-            if not bbo_user:
-                bbo_user = profile_model.bbo_main_account.bbo_user
-            elif not profile_model.is_linked(bbo_user):
-                await ctx.send(
-                    f"You are not a representative of {bbo_user}. You cannot sign-up as them.",
-                    ephemeral=True
-                )
-                return
-            active_tournament = datastore.TeamRRTournament.get_active_tournament(session)
-            if not active_tournament:
-                await ctx.send(
-                    "No tournament is currently running. Wait for one to start!",
-                    ephemeral=True
-                )
-                return
-            session.add(
-                datastore.TeamRREntry(tournament_id=active_tournament.tournament_id, bbo_user=bbo_user)
+    @utilities.SessionedGuard(
+        active_tournament=utilities.assert_tournament_exists,
+        bbo_user=utilities.assert_bbo_rep
+    )
+    async def signup(self, ctx, *, bbo_user=None):
+        guard = self.signup.coro
+        guard.session.add(
+            datastore.TeamRREntry(
+                tournament_id=guard.active_tournament.tournament_id,
+                bbo_user=guard.bbo_user
             )
-            session.commit()
-        await ctx.send("Signed up for the upcoming tournament!", ephemeral=True)
+        )
+        try:
+            guard.session.commit()
+            await ctx.send("Signed up for the upcoming tournament!", ephemeral=True)
+        except IntegrityError:
+            await ctx.send("You are already signed up for the upcoming tournament.", ephemeral=True)
 
     @interactions.extension_command(
         name="team_rr_drop",
@@ -73,76 +68,61 @@ class TeamRRManagerExtension(interactions.Extension):
             bbo_user_option_factory("BBO user if dropping for someone else."),
         ]
     )
-    async def drop_tournament(self, ctx, bbo_user=None):
-        with datastore.Session() as session:
-            profile_model = session.get(datastore.ServerProfile, int(ctx.user.id))
-            if not bbo_user:
-                bbo_user = profile_model.bbo_main_account.bbo_user
-            elif not profile_model.is_linked(bbo_user):
-                await ctx.send(
-                    f"You are not a representative of {bbo_user}. You cannot sign-up as them.",
-                    ephemeral=True
-                )
-                return
-            active_tournament = datastore.TeamRRTournament.get_active_tournament(session)
-            if not active_tournament:
-                await ctx.send(
-                    "No tournament is currently running. Wait for one to start!",
-                    ephemeral=True
-                )
-                return
-
-            entry_model = session.get(datastore.TeamRREntry, (active_tournament.tournament_id, bbo_user))
-            if not entry_model:
-                await ctx.send(
-                    f"{bbo_user} is not currently signed up for the upcoming tournament.",
-                    ephemeral=True
-                )
-                return
-            session.delete(entry_model)
-            session.commit()
+    @utilities.SessionedGuard(
+        active_tournament=utilities.assert_tournament_exists,
+        bbo_user=utilities.assert_bbo_rep
+    )
+    async def drop_tournament(self, ctx, *, bbo_user=None):
+        guard = self.drop_tournament.coro
+        entry_model = guard.session.get(datastore.TeamRREntry, (guard.active_tournament.tournament_id, guard.bbo_user))
+        if not entry_model:
+            await ctx.send(
+                f"{guard.bbo_user} is not currently signed up for the upcoming tournament.",
+                ephemeral=True
+            )
+        guard.session.delete(entry_model)
+        guard.session.commit()
         await ctx.send("Successfully dropped out from the upcoming tournament!", ephemeral=True)
 
     @interactions.extension_command(
         name="team_rr_info",
         description="Displays information about the currently active team round robin tournament.",
     )
-    async def team_rr_info(self, ctx):
-        profile_embed = interactions.Embed()
-        with datastore.Session() as session:
-            tournament_model = datastore.TeamRRTournament.get_active_tournament(session)
-            if not tournament_model:
-                await ctx.send("No tournament is currently running. Wait for one to start!")
-            profile_embed.title = f"Team RR Tournament: {tournament_model.tournament_name}"
+    @utilities.SessionedGuard(active_tournament=utilities.assert_tournament_exists)
+    async def tournament_info(self, ctx):
+        guard = self.tournament_info.coro
+
+        profile_embed = interactions.Embed(title=f"Team RR Tournament: {guard.active_tournament.tournament_name}")
+        profile_embed.add_field(
+            name="Tournament Details",
+            value="\n".join(
+                f"{key}: {value}"
+                for key, value in {
+                    "Challenge format": guard.active_tournament.scoring_method,
+                    "Boards per match": guard.active_tournament.segment_boards,
+                    "Created at": guard.active_tournament.created_at
+                }.items()
+            )
+        )
+        bbo_users = [p.bbo_user for p in guard.active_tournament.participants]
+        mention_strings = []
+        # TODO: abstract this out to a utility function
+        for bbo_user in bbo_users:
+            bbo_model = guard.session.get(datastore.BBOProfile, bbo_user)
+            if bbo_model.discord_main:
+                discord_user = await interactions.get(
+                    self.client, interactions.User, object_id=bbo_model.discord_main.discord_user)
+                mention_strings.append(f" [{discord_user.mention}]")
+            else:
+                mention_strings.append("")
+        if guard.active_tournament.state == "signup":
             profile_embed.add_field(
-                name="Tournament Details",
+                name="Currently Registered Players",
                 value="\n".join(
-                    f"{key}: {value}"
-                    for key, value in {
-                        "Challenge format": tournament_model.scoring_method,
-                        "Boards per match": tournament_model.segment_boards,
-                        "Created at": tournament_model.created_at
-                    }.items()
+                    f"\t    • {bbo_user}{mention}"
+                    for bbo_user, mention in zip(bbo_users, mention_strings)
                 )
             )
-            bbo_users = [p.bbo_user for p in tournament_model.participants]
-            mention_strings = []
-            for bbo_user in bbo_users:
-                bbo_model = session.get(datastore.BBOProfile, bbo_user)
-                if bbo_model.discord_main:
-                    discord_user = await interactions.get(
-                        self.client, interactions.User, object_id=bbo_model.discord_main.discord_user)
-                    mention_strings.append(f" [{discord_user.mention}]")
-                else:
-                    mention_strings.append("")
-            if tournament_model.state == "signup":
-                profile_embed.add_field(
-                    name="Currently Registered Players",
-                    value="\n".join(
-                        f"\t    • {bbo_user}{mention}"
-                        for bbo_user, mention in zip(bbo_users, mention_strings)
-                    )
-                )
         await ctx.send(embeds=profile_embed)
 
 
