@@ -2,4 +2,4 @@
 from .basic import Session, setup_connection
 
 from .profile import BBOMain, BBOProfile, BBORepresentative, ServerProfile
-from .tournament import TeamRRTournament, TeamRREntry
+from .tournament import TournamentState, TeamRRTournament, TeamRREntry

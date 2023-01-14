@@ -1,6 +1,9 @@
 import logging
+import random
 
+from boltons.iterutils import chunked
 import interactions
+from sqlalchemy import and_
 from sqlalchemy.exc import IntegrityError
 
 from bridge_discord import datastore
@@ -32,9 +35,10 @@ class TeamRRManagerExtension(interactions.Extension):
     async def create_tournament(self, ctx, tournament_name):
         with datastore.Session() as session:
             session.add(
-                datastore.TeamRRTournament(state="signup", tournament_name=tournament_name))
+                datastore.TeamRRTournament(state=datastore.TournamentState.SIGNUP, tournament_name=tournament_name)
+            )
             session.commit()
-        await ctx.send("Successfully created a new team round robin tournament!")
+        await ctx.send("Successfully created a new team round robin tournament!", ephemeral=True)
 
     @interactions.extension_command(
         name="team_rr_signup",
@@ -49,6 +53,8 @@ class TeamRRManagerExtension(interactions.Extension):
     )
     async def signup(self, ctx, *, bbo_user=None):
         guard = self.signup.coro
+        if guard.active_tournament.state is not datastore.TournamentState.SIGNUP:
+            await utilities.failed_guard(ctx, "The active tournament is not currently accepting signups.")
         guard.session.add(
             datastore.TeamRREntry(
                 tournament_id=guard.active_tournament.tournament_id,
@@ -104,33 +110,59 @@ class TeamRRManagerExtension(interactions.Extension):
                 }.items()
             )
         )
-        bbo_users = [p.bbo_user for p in guard.active_tournament.participants]
-        mention_strings = []
-        # TODO: abstract this out to a utility function
-        for bbo_user in bbo_users:
-            bbo_model = guard.session.get(datastore.BBOProfile, bbo_user)
-            if bbo_model.discord_main:
-                discord_user = await interactions.get(
-                    self.client, interactions.User, object_id=bbo_model.discord_main.discord_user)
-                mention_strings.append(f" [{discord_user.mention}]")
-            else:
-                mention_strings.append("")
-        if guard.active_tournament.state == "signup":
-            profile_embed.add_field(
-                name="Currently Registered Players",
-                value="\n".join(
-                    f"\t    • {bbo_user}{mention}"
-                    for bbo_user, mention in zip(bbo_users, mention_strings)
+        if guard.active_tournament.state is datastore.TournamentState.SIGNUP:
+            participant_strings = []
+            for entry_model in guard.active_tournament.participants:
+                if entry_model.bbo_profile.discord_main:
+                    mention_string = await entry_model.bbo_profile.discord_main.server_profile.mention(self.client)
+                    mention_string = f"[{mention_string}]"
+                else:
+                    mention_string = ""
+                participant_strings.append(f"•{entry_model.bbo_user}\t{mention_string}")
+            profile_embed.add_field(name="Currently Registered Players", value="\n".join(participant_strings))
+        elif guard.active_tournament.state is datastore.TournamentState.STARTED:
+            for team_number in range(guard.active_tournament.number_of_teams):
+                team_members = guard.session.query(
+                    datastore.TeamRREntry
+                ).join(datastore.BBOProfile).filter(
+                    and_(
+                        datastore.TeamRREntry.tournament_id == guard.active_tournament.tournament_id,
+                        datastore.TeamRREntry.team_number == team_number
+                    )
+                ).order_by(datastore.BBOProfile.conservative_mmr_estimate).all()
+                profile_embed.add_field(
+                    name=f"Team {team_number + 1}",
+                    value="\n".join(f"•{member.bbo_user}" for member in team_members),
+                    inline=team_number % 3 != 0 or team_number == 0
                 )
-            )
         await ctx.send(embeds=profile_embed)
+
+    @interactions.extension_command(
+        name="team_rr_start",
+        description="Ends the signup phase, starts matches.",
+        default_member_permissions=interactions.Permissions.MANAGE_MESSAGES
+    )
+    @utilities.SessionedGuard(active_tournament=utilities.assert_tournament_exists)
+    async def start_tournament(self, ctx):
+        guard = self.start_tournament.coro
+
+        sorted_participants = sorted(
+            guard.active_tournament.participants, key=lambda p: p.bbo_profile.conservative_mmr_estimate, reverse=True)
+        for pot in chunked(sorted_participants, guard.active_tournament.number_of_teams):
+            random.shuffle(pot)
+            for ix, participant in enumerate(pot):
+                participant.team_number = ix
+        guard.active_tournament.state = datastore.TournamentState.STARTED
+        guard.session.commit()
+        await ctx.send("Tournament has been started and teams have been assigned.", ephemeral=True)
 
 
 def setup(client):
     datastore.setup_connection()
     with datastore.Session() as session:
         active_tournament = session.query(
-            datastore.TeamRRTournament).where(datastore.TeamRRTournament.state != "Inactive").all()
+            datastore.TeamRRTournament
+        ).where(datastore.TeamRRTournament.state != datastore.TournamentState.INACTIVE).all()
         if active_tournament and len(active_tournament) > 1:
             logging.critical("There can only be one active Team RR tournament.")
             raise ValueError("Failed setup assumptions.")

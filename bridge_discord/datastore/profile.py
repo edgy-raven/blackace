@@ -1,10 +1,11 @@
 import functools
 
 import numpy as np
+import interactions
 import scipy
 from sqlalchemy import Column, ForeignKey, Float, Integer, String
 from sqlalchemy.orm import relationship
-from sqlalchemy.ext import hybrid_property
+from sqlalchemy.ext.hybrid import hybrid_property
 
 from .basic import Base
 
@@ -20,12 +21,15 @@ class ServerProfile(Base):
         return bbo_user == self.bbo_main_account.bbo_user or any(
             bbo_user == r.bbo_user for r in self.bbo_representing)
 
+    async def mention(self, client):
+        return (await interactions.get(client, interactions.User, object_id=self.discord_user)).mention
+
 
 class BBOProfile(Base):
     __tablename__ = "bbo_profile"
     bbo_user = Column(String, primary_key=True)
-    mmr_m = Column(Float, server_default=1200.0)
-    mmr_s = Column(Float, server_default=400.0)
+    mmr_m = Column(Float, server_default="1200.0")
+    mmr_s = Column(Float, server_default="400.0")
 
     discord_main = relationship("BBOMain", uselist=False, backref="bbo_profile")
     discord_represented = relationship("BBORepresentative", backref="bbo_profile")
@@ -48,7 +52,7 @@ class BBOProfile(Base):
         self.mmr_s = (m2 - self.mmr_m*self.mmr_m)**0.5
 
     @hybrid_property
-    def conservative_estimate(self):
+    def conservative_mmr_estimate(self):
         return self.mmr_m - 3.0 * self.mmr_s
 
 
