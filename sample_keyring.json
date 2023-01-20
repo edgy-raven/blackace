@@ -1,4 +1,17 @@
 {
-    "bot_token": "your_token_here",
+  "bots": {
+        "argyll": {
+            "bot_token": "<your token here>",
+            "modules": ["bridge_discord.extensions.tournament"]
+        },
+        "clive": {
+            "bot_token": "<your token here>",
+            "modules": [
+                "bridge_discord.extensions.profile",
+                "bridge_discord.extensions.challenge"
+            ],
+            "intents": ["GUILD_MEMBERS"]
+        }
+    }, 
     "served_guild": 3141596
 }

@@ -20,7 +20,7 @@ def bbo_user_option_factory(description):
 
 class TeamRRManagerExtension(interactions.Extension):
     @interactions.extension_command(
-        name="team_rr_create",
+        name="create",
         description="Creates a team round robin tournament",
         default_member_permissions=interactions.Permissions.MANAGE_MESSAGES,
         options=[
@@ -32,7 +32,7 @@ class TeamRRManagerExtension(interactions.Extension):
             )
         ]
     )
-    async def create_tournament(self, ctx, tournament_name):
+    async def create(self, ctx, tournament_name):
         with datastore.Session() as session:
             session.add(
                 datastore.TeamRRTournament(state=datastore.TournamentState.SIGNUP, tournament_name=tournament_name)
@@ -41,7 +41,7 @@ class TeamRRManagerExtension(interactions.Extension):
         await ctx.send("Successfully created a new team round robin tournament!", ephemeral=True)
 
     @interactions.extension_command(
-        name="team_rr_signup",
+        name="signup",
         description="Sign up for the currently active team round robin tournament.",
         options=[
             bbo_user_option_factory("BBO user if signing up for someone else."),
@@ -68,7 +68,7 @@ class TeamRRManagerExtension(interactions.Extension):
             await ctx.send("You are already signed up for the upcoming tournament.", ephemeral=True)
 
     @interactions.extension_command(
-        name="team_rr_drop",
+        name="drop",
         description="Drop registration from the currently active team round robin tournament.",
         options=[
             bbo_user_option_factory("BBO user if dropping for someone else."),
@@ -78,7 +78,7 @@ class TeamRRManagerExtension(interactions.Extension):
         active_tournament=utilities.assert_tournament_exists,
         bbo_user=utilities.assert_bbo_rep
     )
-    async def drop_tournament(self, ctx, *, bbo_user=None):
+    async def drop(self, ctx, *, bbo_user=None):
         guard = self.drop_tournament.coro
         entry_model = guard.session.get(datastore.TeamRREntry, (guard.active_tournament.tournament_id, guard.bbo_user))
         if not entry_model:
@@ -91,11 +91,11 @@ class TeamRRManagerExtension(interactions.Extension):
         await ctx.send("Successfully dropped out from the upcoming tournament!", ephemeral=True)
 
     @interactions.extension_command(
-        name="team_rr_info",
+        name="info",
         description="Displays information about the currently active team round robin tournament.",
     )
     @utilities.SessionedGuard(active_tournament=utilities.assert_tournament_exists)
-    async def tournament_info(self, ctx):
+    async def info(self, ctx):
         guard = self.tournament_info.coro
 
         profile_embed = interactions.Embed(title=f"Team RR Tournament: {guard.active_tournament.tournament_name}")
@@ -138,12 +138,12 @@ class TeamRRManagerExtension(interactions.Extension):
         await ctx.send(embeds=profile_embed)
 
     @interactions.extension_command(
-        name="team_rr_start",
+        name="start",
         description="Ends the signup phase, starts matches.",
         default_member_permissions=interactions.Permissions.MANAGE_MESSAGES
     )
     @utilities.SessionedGuard(active_tournament=utilities.assert_tournament_exists)
-    async def start_tournament(self, ctx):
+    async def start(self, ctx):
         guard = self.start_tournament.coro
 
         sorted_participants = sorted(
