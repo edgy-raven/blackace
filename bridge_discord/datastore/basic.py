@@ -1,4 +1,5 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, Column, DateTime
+from sqlalchemy.sql import func
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 _sessionmaker = None
@@ -16,3 +17,7 @@ def setup_connection():
 
 def Session():
     return _sessionmaker()
+
+
+class CreatedAtMixin:
+    created_at = Column(DateTime, server_default=func.now())

@@ -111,14 +111,10 @@ class TeamRRManagerExtension(interactions.Extension):
             )
         )
         if guard.active_tournament.state is datastore.TournamentState.SIGNUP:
-            participant_strings = []
-            for entry_model in guard.active_tournament.participants:
-                if entry_model.bbo_profile.discord_main:
-                    mention_string = await entry_model.bbo_profile.discord_main.server_profile.mention(self.client)
-                    mention_string = f"[{mention_string}]"
-                else:
-                    mention_string = ""
-                participant_strings.append(f"•{entry_model.bbo_user}\t{mention_string}")
+            participant_strings = [
+                await entry_model.bbo_profile.to_str_with_linked_mention(self.client)
+                for entry_model in guard.active_tournament.participants
+            ]
             profile_embed.add_field(name="Currently Registered Players", value="\n".join(participant_strings))
         elif guard.active_tournament.state is datastore.TournamentState.STARTED:
             for team_number in range(guard.active_tournament.number_of_teams):

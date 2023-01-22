@@ -1,10 +1,10 @@
 import enum
 
-from sqlalchemy import Column, ForeignKey, DateTime, Enum, Integer, String
-from sqlalchemy.sql import func
+from sqlalchemy import Column, ForeignKey, Enum, Integer, String
 from sqlalchemy.orm import relationship
 
-from .basic import Base
+from .basic import Base, CreatedAtMixin
+from .challenge import ScoringMethod
 
 
 class TournamentState(enum.Enum):
@@ -13,13 +13,12 @@ class TournamentState(enum.Enum):
     INACTIVE = 2
 
 
-class TeamRRTournament(Base):
+class TeamRRTournament(Base, CreatedAtMixin):
     __tablename__ = "teamrr_tournament"
 
     tournament_id = Column(Integer, primary_key=True, autoincrement=True)
     tournament_name = Column(String)
-    created_at = Column(DateTime, server_default=func.now())
-    scoring_method = Column(String, default="IMPs")
+    scoring_method = Column(Enum(ScoringMethod), default=ScoringMethod.IMPS)
     segment_boards = Column(Integer, default=7)
     number_of_teams = Column(Integer, default=4)
     state = Column(Enum(TournamentState))

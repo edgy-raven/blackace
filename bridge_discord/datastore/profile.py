@@ -55,6 +55,14 @@ class BBOProfile(Base):
     def conservative_mmr_estimate(self):
         return self.mmr_m - 3.0 * self.mmr_s
 
+    async def to_str_with_linked_mention(self, client):
+        if self.discord_main:
+            mention_string = await self.discord_main.server_profile.mention(client)
+            mention_string = f"[{mention_string}]"
+        else:
+            mention_string = ""
+        return f"•{self.bbo_user}\t{mention_string}"
+
 
 class BBOMain(Base):
     __tablename__ = 'bbo_main'
